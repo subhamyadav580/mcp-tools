@@ -1,0 +1,13 @@
+[project]
+name = "postgres-mcp"
+version = "0.1.0"
+description = "Remote (streamable-http) read-only Postgres MCP server for the TrueForge incident-responder agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.27.2",
+    "psycopg2==2.9.12",
+    "python-dotenv>=1.0.1",
+    "sqlalchemy==2.0.50",
+]
