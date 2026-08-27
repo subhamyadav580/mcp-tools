@@ -14,7 +14,16 @@ client = slack_instance.get_client()
 async def list_channels() -> list[dict[str, Any]]:
     """
     List channels (public and private) that this bot is a member of.
-    Call this first if you don't already know the channel id to use.
+
+    Call this first if you don't already know the channel id to use — the bot can only
+    read/post in channels it has actually been invited to, so this is the full set of
+    channels available to the other tools here.
+
+    Returns:
+        One entry per channel: {"id", "name", "is_member"}. `is_member` is always true
+        here (channels the bot isn't in are filtered out). If the bot's token only has
+        scope for one of public/private channels, that half is silently omitted rather
+        than erroring — check the result against what you expected to see.
     """
     channels: list[dict[str, Any]] = []
     for types in ("public_channel", "private_channel"):
@@ -41,12 +50,20 @@ async def list_channels() -> list[dict[str, Any]]:
 @mcp.tool()
 async def list_channel_messages(channel: Optional[str] = None, limit: int = 20) -> list[dict[str, Any]]:
     """
-    Read recent messages from a Slack channel, newest first.
+    Read recent top-level messages from a Slack channel, newest first.
+
+    This only returns top-level channel messages — it does NOT include thread replies.
+    Use get_thread_replies(ts) on a message's `ts` to read what's inside its thread.
 
     Args:
-        channel: Channel id (e.g. "C0123456789"). Defaults to the configured
-            alerts channel if omitted. Call list_channels() first if unsure.
+        channel: Channel id (e.g. "C0123456789"). Defaults to the configured alerts
+            channel if omitted. Call list_channels() first if unsure which id to use.
         limit: Max number of messages to return (default 20).
+
+    Returns:
+        Messages as {"ts", "user", "text"}, newest first. `ts` is both the message's
+        timestamp and its unique id — pass it as `thread_ts` to post_message or
+        get_thread_replies to act on that specific message's thread.
     """
     response = client.conversations_history(channel=channel or DEFAULT_CHANNEL, limit=limit)
     return [
@@ -60,11 +77,20 @@ async def post_message(text: str, channel: Optional[str] = None, thread_ts: Opti
     """
     Post a message to a Slack channel, optionally as a threaded reply.
 
+    Prefer replying in-thread (pass thread_ts) when responding to a specific alert —
+    it keeps the channel readable and keeps your response visibly tied to what
+    triggered it, instead of adding an unrelated top-level message.
+
     Args:
-        text: Message text (markdown-ish Slack "mrkdwn" formatting is supported).
+        text: Message text. Slack "mrkdwn" formatting is supported: *bold*, _italic_,
+            `code`, ```code block```, <https://url|link text>.
         channel: Channel id to post to. Defaults to the configured alerts channel if omitted.
         thread_ts: The `ts` of the parent message to reply in-thread to (from
             list_channel_messages or get_thread_replies). Omit to post a new top-level message.
+
+    Returns:
+        {"channel", "ts", "thread_ts"} — the posted message's own `ts` (usable as
+        `thread_ts` for a further reply) and the `thread_ts` you passed in, if any.
     """
     response = client.chat_postMessage(channel=channel or DEFAULT_CHANNEL, text=text, thread_ts=thread_ts)
     return {"channel": response["channel"], "ts": response["ts"], "thread_ts": thread_ts}
@@ -73,12 +99,20 @@ async def post_message(text: str, channel: Optional[str] = None, thread_ts: Opti
 @mcp.tool()
 async def get_thread_replies(thread_ts: str, channel: Optional[str] = None, limit: int = 50) -> list[dict[str, Any]]:
     """
-    Read all replies in a thread, oldest first (the first item is the parent message itself).
+    Read a thread's full conversation, oldest first — the parent message plus every reply.
+
+    Use this to check whether a human has already responded in a thread (e.g. on an
+    alert) before posting your own reply into it.
 
     Args:
-        thread_ts: The `ts` of the parent message that started the thread.
+        thread_ts: The `ts` of the parent message that started the thread (from
+            list_channel_messages, or a previous post_message call).
         channel: Channel id the thread is in. Defaults to the configured alerts channel if omitted.
-        limit: Max number of replies to return (default 50).
+        limit: Max number of messages to return, including the parent (default 50).
+
+    Returns:
+        Messages as {"ts", "user", "text"}, oldest first. The first item (index 0) is
+        always the thread's parent message itself, not a reply.
     """
     response = client.conversations_replies(channel=channel or DEFAULT_CHANNEL, ts=thread_ts, limit=limit)
     return [

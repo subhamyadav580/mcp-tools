@@ -80,7 +80,13 @@ def validate_query(query: str) -> None:
 @mcp.tool()
 async def list_tables() -> List[str]:
     """
-    List all tables in the public schema.
+    List all tables in the database's public schema.
+
+    Call this first if you don't already know which table holds the data you need —
+    it's the entry point for exploring an unfamiliar database before writing queries.
+
+    Returns:
+        Table names, alphabetically sorted. Empty list if the schema has no tables.
     """
     session = db_instance.get_session()
 
@@ -111,18 +117,25 @@ async def fetch_one(
     params: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Execute a read-only SQL query and return the first row.
+    Execute a read-only SQL query and return only its first matching row.
+
+    Use this when you expect at most one row (e.g. looking up a record by id) — it's
+    cheaper than fetch_all and avoids pulling back rows you don't need.
 
     Notes:
-    - Only SELECT and WITH queries are allowed.
-    - INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE are forbidden.
-    - Parameterized queries are recommended.
+    - Only SELECT and WITH queries are allowed; DML/DDL keywords (INSERT, UPDATE,
+      DELETE, DROP, ALTER, TRUNCATE, CREATE, ...) and multi-statement queries are
+      rejected with a ValueError before anything runs against the database.
+    - Prefer parameterized queries (`:name` placeholders + `params`) over string-building
+      values into the query text — safer, and avoids type/quoting mistakes.
 
-    Example:
-        SELECT * FROM users WHERE id = :user_id
+    Args:
+        query: A SELECT or WITH statement, e.g. "SELECT * FROM users WHERE id = :user_id".
+        params: Bind parameters referenced in the query, e.g. {"user_id": 1}. Omit if the
+            query has no placeholders.
 
-    Params:
-        {"user_id": 1}
+    Returns:
+        The first matching row as a dict of column name to value, or None if no row matched.
     """
 
     validate_query(query)
@@ -155,18 +168,25 @@ async def fetch_all(
     params: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Execute a read-only SQL query and return all rows.
+    Execute a read-only SQL query and return every matching row.
+
+    Use LIMIT in the query itself for anything that could return a large result set —
+    this returns the full result with no automatic truncation.
 
     Notes:
-    - Only SELECT and WITH queries are allowed.
-    - INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE are forbidden.
-    - Parameterized queries are recommended.
+    - Only SELECT and WITH queries are allowed; DML/DDL keywords (INSERT, UPDATE,
+      DELETE, DROP, ALTER, TRUNCATE, CREATE, ...) and multi-statement queries are
+      rejected with a ValueError before anything runs against the database.
+    - Prefer parameterized queries (`:name` placeholders + `params`) over string-building
+      values into the query text — safer, and avoids type/quoting mistakes.
 
-    Example:
-        SELECT * FROM users WHERE status = :status
+    Args:
+        query: A SELECT or WITH statement, e.g. "SELECT * FROM users WHERE status = :status".
+        params: Bind parameters referenced in the query, e.g. {"status": "ACTIVE"}. Omit if
+            the query has no placeholders.
 
-    Params:
-        {"status": "ACTIVE"}
+    Returns:
+        Every matching row as a dict of column name to value. Empty list if none matched.
     """
 
     validate_query(query)
